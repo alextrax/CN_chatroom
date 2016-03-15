@@ -7,25 +7,25 @@ import select
 import re
  
 size = 1024
-
+uname = ''
 try:
     g_server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # socket for keyinterrupt exception handling
 except socket.error, msg:
     sys.stderr.write("[ERROR] %s\n" % msg[1])
     sys.exit(1)
-#def login(ssock):
 
-
-def input_loop(ssock):
+def login(ssock):
+    global uname
     uname = raw_input('please enter your username: ')
-    ssock.send(uname)
     passwd = raw_input('please enter your password: ')
-    ssock.send(passwd)
+    
+    msg = 'login '+ uname + ' ' + passwd 
+    ssock.send(msg)
     welcome_msg = ssock.recv(size) 
     print welcome_msg
     if welcome_msg == '\nunknown username\n' or welcome_msg == '\nyou are already online\n':
-        ssock.close()
-        return
+        #ssock.close()
+        return False
 
     if welcome_msg == '\ninvalid password\n':
         #while True:
@@ -33,10 +33,13 @@ def input_loop(ssock):
         #    ssock.send(passwd)
         #    welcome_msg = ssock.recv(size) 
         #    if welcome_msg == '\ninvalid password\n':
-        ssock.close()
-        return
+        #ssock.close()
+        return False
 
+    return True    
 
+def input_loop(ssock):
+    global uname
     print '\n', uname+'> '
     sockets_listen = [ssock, sys.stdin] # socket list for select 
     msg_client = ''
@@ -72,7 +75,9 @@ def main():
     except socket.error, msg:
         sys.stderr.write("[ERROR] %s\n" % msg[1])
         exit(1)
-    #login(g_server_sock)
+    if login(g_server_sock) == False:
+        return
+
     input_loop(g_server_sock)
     
 if __name__ == '__main__': 

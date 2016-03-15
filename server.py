@@ -13,7 +13,10 @@ user_pass = dict() # dictionary: key = username, value = password
 logout_time = dict() # dictionary: key = username, value = logout time
 user_sock = dict() # dictionary: key = username, value = user sock
 ip_block = dict() # dictionary: key = ip, value = block endtime
+login_fail = dict() # dictionary: key = uname, value = count
 offline_msg = [] # list of off_message
+sockets_listen = [] # sock list for select
+
 
 class off_message:
     def __init__(self, receiver, msg):
@@ -28,16 +31,21 @@ def parse_user_pass(): # read user_pass.txt and save it to dictionary user_pass
         user_pass[info[0]] = info[1]
          
       
-def handle_login(csock):
-    uname = csock.recv(size)
-    passwd = csock.recv(size)
+def handle_login(csock, data): # 0:success, 1:unknown user, 2:duplicate, 3:wrong
+    info = data.split(' ')
+    uname = info[1]
+    passwd = info[2]
+    print 'uname = ' + uname
+    print 'passwd = ' + passwd
     if uname not in user_pass: # unknown user
         csock.send('\nunknown username\n')
-        return False
+        sockets_listen.remove(csock)
+        return 1
 
     if uname in user_sock:
         csock.send('\nyou are already online\n')
-        return False # already online
+        sockets_listen.remove(csock)
+        return 2 # already online
 
     hash_object = hashlib.sha1(passwd.encode())
     hex_dig = hash_object.hexdigest()
@@ -65,10 +73,11 @@ def handle_login(csock):
             csock.send(msg)
             offline_msg = new_offline_msg        
             
-        return True
+        return 0
     else: # wrong password
         csock.send('\ninvalid password\n')
-        return False     
+        sockets_listen.remove(csock)
+        return 3     
 
 def handle_logout(csock):
     logout_success = ''
@@ -170,6 +179,8 @@ def handle_command(csock, data): # parse and distribute commands
         handle_send(csock, data)
     elif cmd[0] == 'logout':
         handle_logout(csock)
+    elif cmd[0] == 'login':
+        handle_login(csock, data)   
     else: # unrecognized command  
         print cmd 
         csock.send('unrecognized command: '+data)
@@ -180,6 +191,7 @@ def main():
     asock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # socket for accept new connection 
     asock.bind((host, port))
     asock.listen(50)
+    global sockets_listen
     sockets_listen = [asock] # socket list for select 
     parse_user_pass()
     print user_pass
@@ -189,12 +201,8 @@ def main():
         for current in inputready:
             if current == asock: # new connection 
                 csock, addr = asock.accept()
+                sockets_listen.append(csock)
                 print "Client Info: ", csock, addr
-                if handle_login(csock) == True:
-                    sockets_listen.append(csock)
-                else:
-                    csock.close()
-
             else:  # msg from client 
                 data = current.recv(size) 
                 if data: 
