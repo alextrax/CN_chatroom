@@ -9,10 +9,11 @@ import re
 from datetime import datetime
 
 size = 1024 
+retry_count = 3
 user_pass = dict() # dictionary: key = username, value = password
 logout_time = dict() # dictionary: key = username, value = logout time
 user_sock = dict() # dictionary: key = username, value = user sock
-ip_block = dict() # dictionary: key = ip, value = block endtime
+ip_block = dict() # dictionary: key = uname, value = (ip, block_endtime) 
 login_fail = dict() # dictionary: key = uname, value = count
 offline_msg = [] # list of off_message
 sockets_listen = [] # sock list for select
@@ -40,12 +41,12 @@ def handle_login(csock, data): # 0:success, 1:unknown user, 2:duplicate, 3:wrong
     if uname not in user_pass: # unknown user
         csock.send('\nunknown username\n')
         sockets_listen.remove(csock)
-        return 1
+        return False
 
     if uname in user_sock:
         csock.send('\nyou are already online\n')
         sockets_listen.remove(csock)
-        return 2 # already online
+        return False # already online
 
     hash_object = hashlib.sha1(passwd.encode())
     hex_dig = hash_object.hexdigest()
@@ -53,6 +54,8 @@ def handle_login(csock, data): # 0:success, 1:unknown user, 2:duplicate, 3:wrong
 
     if hex_dig == user_pass[uname]: # user login success
         user_sock[uname] = csock # add username and corresponding socket
+        if uname in login_fail: # clean login fail count
+            del login_fail[uname]
         csock.send('\n*** WELCOME TO CHATROOM (press ctrl+D to submit your command) ***\n')
         if uname in logout_time:
             del logout_time[uname] # remove last logout time
@@ -71,13 +74,25 @@ def handle_login(csock, data): # 0:success, 1:unknown user, 2:duplicate, 3:wrong
         if has_off_msg == 1:
             csock.send('\nYou\'ve got offline message:\n')
             csock.send(msg)
-            offline_msg = new_offline_msg        
-            
-        return 0
+            offline_msg = new_offline_msg                   
+        return True
+
     else: # wrong password
-        csock.send('\ninvalid password\n')
-        sockets_listen.remove(csock)
-        return 3     
+        if uname in login_fail: # check and increase login fail count
+            global retry_count
+            login_fail[uname] += 1
+            if login_fail[uname] >= retry_count: # exceed retry count, block user! 
+                print 'block user!\n'
+                csock.send('\nYOU ARE BLOCKED!!\n')
+                sockets_listen.remove(csock)
+            else:    
+                csock.send('\ninvalid password\n')
+        else: # add new login fail count
+            csock.send('\ninvalid password\n')
+            login_fail[uname] = 1
+            
+        print 'user: ', uname, ', IP: ', csock.getpeername(), ', retry_count: ', login_fail[uname], '\n'  
+        return False     
 
 def handle_logout(csock):
     logout_success = ''

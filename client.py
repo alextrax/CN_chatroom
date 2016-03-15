@@ -14,9 +14,10 @@ except socket.error, msg:
     sys.stderr.write("[ERROR] %s\n" % msg[1])
     sys.exit(1)
 
-def login(ssock):
+def login(ssock, retry = 0): #0:success, 1:unknown or duplicate, 2:invalid passwd, 3:block user 
     global uname
-    uname = raw_input('please enter your username: ')
+    if retry == 0:
+        uname = raw_input('please enter your username: ')
     passwd = raw_input('please enter your password: ')
     
     msg = 'login '+ uname + ' ' + passwd 
@@ -25,22 +26,17 @@ def login(ssock):
     print welcome_msg
     if welcome_msg == '\nunknown username\n' or welcome_msg == '\nyou are already online\n':
         #ssock.close()
-        return False
-
-    if welcome_msg == '\ninvalid password\n':
-        #while True:
-        #    passwd = raw_input('please enter your password: ')
-        #    ssock.send(passwd)
-        #    welcome_msg = ssock.recv(size) 
-        #    if welcome_msg == '\ninvalid password\n':
-        #ssock.close()
-        return False
-
-    return True    
+        return 1
+    elif welcome_msg == '\ninvalid password\n':
+        return 2
+    elif welcome_msg == '\nYOU ARE BLOCKED!!\n':
+        return 3   
+    else:    
+        return 0    
 
 def input_loop(ssock):
     global uname
-    print '\n', uname+'> '
+    print '\ny', uname+'> '
     sockets_listen = [ssock, sys.stdin] # socket list for select 
     msg_client = ''
     while True:
@@ -75,8 +71,21 @@ def main():
     except socket.error, msg:
         sys.stderr.write("[ERROR] %s\n" % msg[1])
         exit(1)
-    if login(g_server_sock) == False:
-        return
+
+    ret = login(g_server_sock)
+    if ret == 2:  # wrong passwd, retry
+        while True:
+            r = login(g_server_sock, 1)    
+            if r == 0: # retry login
+                break
+            elif r == 3: # being blocked
+                return    
+
+    elif ret == 1: # 1:unknown or duplicate user
+        return 
+
+    elif ret == 3: # 3:user being blocked
+        return   
 
     input_loop(g_server_sock)
     
