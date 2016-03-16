@@ -36,7 +36,7 @@ def login(ssock, retry = 0): #0:success, 1:unknown or duplicate, 2:invalid passw
 
 def input_loop(ssock):
     global uname
-    print '\ny', uname+'> '
+    print '\n', uname+'> '
     sockets_listen = [ssock, sys.stdin] # socket list for select 
     msg_client = ''
     while True:

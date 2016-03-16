@@ -6,14 +6,18 @@ import select
 import sys
 import hashlib
 import re
+import threading
+import time
+import os
 from datetime import datetime
 
 size = 1024 
 retry_count = 3
+default_btime = 30 # 30 seconds
 user_pass = dict() # dictionary: key = username, value = password
 logout_time = dict() # dictionary: key = username, value = logout time
 user_sock = dict() # dictionary: key = username, value = user sock
-ip_block = dict() # dictionary: key = uname, value = (ip, block_endtime) 
+user_block = dict() # dictionary: key = uname, value = ip
 login_fail = dict() # dictionary: key = uname, value = count
 offline_msg = [] # list of off_message
 sockets_listen = [] # sock list for select
@@ -24,14 +28,39 @@ class off_message:
         self.receiver = receiver
         self.msg = msg
 
-def parse_user_pass(): # read user_pass.txt and save it to dictionary user_pass
+# read user_pass.txt and save it to dictionary user_pass
+def parse_user_pass(): 
     f = open('user_pass.txt')
     for line in f:
         line = line.rstrip('\n') # remove '\n'
         info = line.split(' ') 
         user_pass[info[0]] = info[1]
-         
-      
+
+# clean user's blocking record
+def block_cleaner(uname):
+    print 'block_cleaner: '
+    if uname in user_block: 
+        print 'clean ' + uname + ', IP: ' + user_block[uname] 
+        del user_block[uname]  
+    if uname in login_fail: # clean login fail count
+            del login_fail[uname]           
+
+def block_handler(uname, ip):
+    print 'block_handler: '+ uname +' '+ ip
+    user_block[uname] = ip
+    try:
+        btime = int(os.environ.get('BLOCK_TIME'))
+    except ValueError:
+        print 'btime ValueError'
+        btime = default_btime
+
+    print 'btime =', btime    
+    t = threading.Timer(btime, block_cleaner, [uname])
+    t.daemon = True
+    t.start()
+
+
+# 0:success, 1:unknown user, 2:duplicate, 3:wrong            
 def handle_login(csock, data): # 0:success, 1:unknown user, 2:duplicate, 3:wrong
     info = data.split(' ')
     uname = info[1]
@@ -47,6 +76,12 @@ def handle_login(csock, data): # 0:success, 1:unknown user, 2:duplicate, 3:wrong
         csock.send('\nyou are already online\n')
         sockets_listen.remove(csock)
         return False # already online
+
+    if uname in user_block:
+        if csock.getpeername()[0] == user_block[uname]:
+            csock.send('\nYOU ARE BLOCKED!!\n')
+            sockets_listen.remove(csock)
+            return False # already online    
 
     hash_object = hashlib.sha1(passwd.encode())
     hex_dig = hash_object.hexdigest()
@@ -84,6 +119,7 @@ def handle_login(csock, data): # 0:success, 1:unknown user, 2:duplicate, 3:wrong
             if login_fail[uname] >= retry_count: # exceed retry count, block user! 
                 print 'block user!\n'
                 csock.send('\nYOU ARE BLOCKED!!\n')
+                block_handler(uname, csock.getpeername()[0])
                 sockets_listen.remove(csock)
             else:    
                 csock.send('\ninvalid password\n')
