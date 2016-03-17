@@ -43,7 +43,10 @@ def input_loop(ssock):
         inputready,outputready,exceptready = select.select(sockets_listen,[],[]) 
         for current in inputready: 
             if current == ssock: # new msg from server
-                print ssock.recv(size)
+                server_msg = ssock.recv(size)
+                print server_msg
+                if server_msg == '@@@AUTO_LOGOUT@@@': # automatically kicked out by server
+                    return
                 print '\n', uname+'> '
             elif current == sys.stdin: # user types new input   
                 try:    

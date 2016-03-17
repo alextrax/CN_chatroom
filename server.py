@@ -14,11 +14,13 @@ from datetime import datetime
 size = 1024 
 retry_count = 3
 default_btime = 30 # 30 seconds
+default_tout= 30 # 30 seconds
 user_pass = dict() # dictionary: key = username, value = password
 logout_time = dict() # dictionary: key = username, value = logout time
 user_sock = dict() # dictionary: key = username, value = user sock
 user_block = dict() # dictionary: key = uname, value = ip
 login_fail = dict() # dictionary: key = uname, value = count
+user_checkin = dict() # dictionary: key = uname, value = last recv time
 offline_msg = [] # list of off_message
 sockets_listen = [] # sock list for select
 
@@ -36,6 +38,31 @@ def parse_user_pass():
         info = line.split(' ') 
         user_pass[info[0]] = info[1]
 
+def check_alive():
+    #print 'check_alive:\n'
+    if os.environ.get('TIME_OUT') == None:
+        tout = default_tout
+    else:    
+        try:
+            tout = int(os.environ.get('TIME_OUT'))
+        except ValueError:
+            print 'tout ValueError'
+            tout = default_tout
+
+    now = datetime.now()
+    for key in user_checkin:
+        if user_checkin[key] != None:
+            diff = now - user_checkin[key]
+            diff_sec = diff.days * 24 * 60*60 + diff.seconds
+            if diff_sec >= tout: # user inactive time out 
+                user_sock[key].send('@@@AUTO_LOGOUT@@@')
+                handle_logout(user_sock[key])
+                print 'user ' + key + ' time out, auto logout!\n'
+
+    t = threading.Timer(1, check_alive, [])
+    t.daemon = True
+    t.start()
+
 # clean user's blocking record
 def block_cleaner(uname):
     print 'block_cleaner: '
@@ -43,16 +70,19 @@ def block_cleaner(uname):
         print 'clean ' + uname + ', IP: ' + user_block[uname] 
         del user_block[uname]  
     if uname in login_fail: # clean login fail count
-            del login_fail[uname]           
+        del login_fail[uname]           
 
 def block_handler(uname, ip):
     print 'block_handler: '+ uname +' '+ ip
     user_block[uname] = ip
-    try:
-        btime = int(os.environ.get('BLOCK_TIME'))
-    except ValueError:
-        print 'btime ValueError'
-        btime = default_btime
+    if os.environ.get('BLOCK_TIME') == None:
+        ubtime = default_btime
+    else:    
+        try:
+            btime = int(os.environ.get('BLOCK_TIME'))
+        except ValueError:
+            print 'btime ValueError'
+            btime = default_btime
 
     print 'btime =', btime    
     t = threading.Timer(btime, block_cleaner, [uname])
@@ -89,11 +119,14 @@ def handle_login(csock, data): # 0:success, 1:unknown user, 2:duplicate, 3:wrong
 
     if hex_dig == user_pass[uname]: # user login success
         user_sock[uname] = csock # add username and corresponding socket
-        if uname in login_fail: # clean login fail count
-            del login_fail[uname]
         csock.send('\n*** WELCOME TO CHATROOM (press ctrl+D to submit your command) ***\n')
         if uname in logout_time:
             del logout_time[uname] # remove last logout time
+
+        if uname in login_fail: # clean login fail count
+            del login_fail[uname]    
+
+        user_checkin[uname] = datetime.now() # update user's last recv time
 
         new_offline_msg = list()
         has_off_msg = 0
@@ -136,14 +169,16 @@ def handle_logout(csock):
         if(user_sock[key] == csock):
             print 'logout user', key
             logout_success = key
-         
 
     if logout_success != '':
-        del user_sock[logout_success]
+        del user_sock[logout_success] # remove from user_sock dict
         logout_time[logout_success] = datetime.now()
     else:
         print 'logout failed: can\'t find user\n'    
 
+    if logout_success != '': 
+        if logout_success in user_checkin:
+             user_checkin[logout_success] = None # clean time_out check dict
 
 def handle_broadcast(csock, data):
     cmd = re.split(r'broadcast[\n| ]+', data, 1) # only split the first broadcast
@@ -159,7 +194,7 @@ def get_uname_from_sock(sock):
         if(user_sock[key] == sock):
             return key
 
-    return 'unknown'        
+    return None        
 
 def handle_send(csock, data):
     cmd = re.split(r'send[\n| ]+', data, 1) # only split the first 'send'
@@ -246,6 +281,7 @@ def main():
     sockets_listen = [asock] # socket list for select 
     parse_user_pass()
     print user_pass
+    check_alive()
     while True:
         inputready,outputready,exceptready = select.select(sockets_listen,[],[]) 
         print 'detect select sockets'
@@ -257,7 +293,8 @@ def main():
             else:  # msg from client 
                 data = current.recv(size) 
                 if data: 
-                    #current.send('from server:\n' + data) 
+                    if get_uname_from_sock(current) != None:
+                        user_checkin[get_uname_from_sock(current)] = datetime.now() # update user's last recv time
                     print 'msg from client', data
                     handle_command(current, data)
                 else: 
