@@ -67,10 +67,11 @@ def input_loop(ssock):
 
 
 def main(): 
-    port = int(sys.argv[1]) # get port number
+    IP = sys.argv[1] # IP address
+    port = int(sys.argv[2]) # get port number
   
     try:
-        g_server_sock.connect(('', port))
+        g_server_sock.connect((IP, port))
     except socket.error, msg:
         sys.stderr.write("[ERROR] %s\n" % msg[1])
         exit(1)

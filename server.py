@@ -13,8 +13,8 @@ from datetime import datetime
 
 size = 1024 
 retry_count = 3
-default_btime = 30 # 30 seconds
-default_tout= 30 # 30 seconds
+default_btime = 60 # default block time: 60 seconds
+default_tout= 30 * 60 # default time out: 60 mins
 user_pass = dict() # dictionary: key = username, value = password
 logout_time = dict() # dictionary: key = username, value = logout time
 user_sock = dict() # dictionary: key = username, value = user sock
@@ -46,7 +46,6 @@ def check_alive():
         try:
             tout = int(os.environ.get('TIME_OUT'))
         except ValueError:
-            print 'tout ValueError'
             tout = default_tout
 
     now = datetime.now()
@@ -90,13 +89,13 @@ def block_handler(uname, ip):
     t.start()
 
 
-# 0:success, 1:unknown user, 2:duplicate, 3:wrong            
-def handle_login(csock, data): # 0:success, 1:unknown user, 2:duplicate, 3:wrong
+           
+def handle_login(csock, data): 
     info = data.split(' ')
     uname = info[1]
     passwd = info[2]
-    print 'uname = ' + uname
-    print 'passwd = ' + passwd
+    #print 'uname = ' + uname
+    #print 'passwd = ' + passwd
     if uname not in user_pass: # unknown user
         csock.send('\nunknown username\n')
         sockets_listen.remove(csock)
@@ -111,7 +110,7 @@ def handle_login(csock, data): # 0:success, 1:unknown user, 2:duplicate, 3:wrong
         if csock.getpeername()[0] == user_block[uname]:
             csock.send('\nYOU ARE BLOCKED!!\n')
             sockets_listen.remove(csock)
-            return False # already online    
+            return False # user was blocked  
 
     hash_object = hashlib.sha1(passwd.encode())
     hex_dig = hash_object.hexdigest()
@@ -179,6 +178,10 @@ def handle_logout(csock):
     if logout_success != '': 
         if logout_success in user_checkin:
              user_checkin[logout_success] = None # clean time_out check dict
+
+    if csock in sockets_listen:
+        sockets_listen.remove(csock)         
+
 
 def handle_broadcast(csock, data):
     cmd = re.split(r'broadcast[\n| ]+', data, 1) # only split the first broadcast
@@ -279,9 +282,8 @@ def main():
     asock.listen(50)
     global sockets_listen
     sockets_listen = [asock] # socket list for select 
-    parse_user_pass()
-    print user_pass
-    check_alive()
+    parse_user_pass() # parse user_pass.txt
+    check_alive() # start check alive daemon
     while True:
         inputready,outputready,exceptready = select.select(sockets_listen,[],[]) 
         print 'detect select sockets'
@@ -299,7 +301,8 @@ def main():
                     handle_command(current, data)
                 else: 
                     current.close() 
-                    sockets_listen.remove(current)     
+                    if current in sockets_listen:
+                        sockets_listen.remove(current)     
 
 if __name__ == '__main__': 
     try:
