@@ -202,13 +202,13 @@ def get_uname_from_sock(sock):
 def handle_send(csock, data):
     cmd = re.split(r'send[\n| ]+', data, 1) # only split the first 'send'
     receiver = re.search(r"\((.+?)\)", cmd[1], re.DOTALL) # re.DOTALL ==> make '.'' include newline, ? ==> non-greedy search
-    if receiver: # receivers with () --> (a, b, c...)
-        found = receiver.group(1) # --> a, b, c...
+    if receiver: # receivers with () --> (a b c...)
+        found = receiver.group(1) # --> a b c...
         msg = re.split(r'\((.+?)\)', cmd[1], 1, re.DOTALL) # remove (a, b, c...)
         print 'msg:', msg
         found = found.replace("\n", "")
-        found = found.replace(" ", "")
-        rlist = found.split(',')
+        #found = found.replace(" ", "")
+        rlist = found.split(' ')
         print 'receiver: ',rlist
         for key in rlist:
             if( key in user_sock):
